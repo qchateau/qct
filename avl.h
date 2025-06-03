@@ -17,11 +17,24 @@ public:
 
     constexpr std::size_t distance_from_begin() const
     {
+        avl_node const* x = this;
+
+        if (bst_is_header(x)) {
+            if (!x->parent_) {
+                return 0;
+            }
+            return x->right_->distance_from_begin() + 1;
+        }
+
         std::size_t distance = 0;
-        auto z = this;
-        for (auto x = parent_; x; z = x, x = x->parent_) {
-            if (z == x->right_) {
-                distance += (x->left_ ? x->left_->subtree_size_ : 0) + 1;
+
+        if (x->left_) {
+            distance += x->left_->subtree_size_;
+        }
+
+        for (; !bst_is_root(x); x = x->parent_) {
+            if (x == x->parent_->right_) {
+                distance += x->parent_->subtree_size_ - x->subtree_size_;
             }
         }
         return distance;
@@ -29,11 +42,37 @@ public:
 
     constexpr auto balance() const { return balance_; }
     constexpr auto subtree_size() const { return subtree_size_; }
-    constexpr auto const* left() const { return left_; }
-    constexpr auto const* right() const { return right_; }
-    constexpr auto const* parent() const { return parent_; }
+    constexpr avl_node const* left() const { return left_; }
+    constexpr avl_node const* right() const { return right_; }
+    constexpr avl_node const* parent() const { return parent_; }
 
 private:
+    static constexpr bool bst_is_header(avl_node const* x)
+    {
+        if (!x->parent_) {
+            // header of empty tree
+            return true;
+        }
+        if (!x->right_ || !x->left_) {
+            // header always has both right and left
+            return false;
+        }
+        if (x->right_ == x->left_) {
+            // header of single node tree
+            return true;
+        }
+        if (x->right_->parent_ != x || x->left_->parent_ != x) {
+            // size > 1, header can't be the parent of both rightmost and leftmost
+            return true;
+        }
+        return false;
+    }
+
+    static constexpr bool bst_is_root(avl_node const* x)
+    {
+        return x->parent_->parent_ == x;
+    }
+
     avl_node* parent_{nullptr};
     avl_node* left_{nullptr};
     avl_node* right_{nullptr};
@@ -43,6 +82,8 @@ private:
 
 template <typename Node>
 class avl_tree {
+    using avl_node = std::remove_pointer_t<decltype(Node::parent_)>;
+
     template <bool Const>
     class iterator_impl {
     public:
@@ -59,7 +100,7 @@ class avl_tree {
 
         constexpr iterator_impl& operator++()
         {
-            node_ = upcast(bst_successor(node_));
+            node_ = bst_successor(node_);
             return *this;
         }
         constexpr iterator_impl operator++(int)
@@ -70,7 +111,7 @@ class avl_tree {
         }
         constexpr iterator_impl& operator--()
         {
-            node_ = upcast(bst_predecessor(node_));
+            node_ = bst_predecessor(node_);
             return *this;
         }
         constexpr iterator_impl operator--(int)
@@ -87,7 +128,8 @@ class avl_tree {
         {
             return !(*this == other);
         }
-        constexpr value_type& operator*() const { return *node_; }
+        constexpr value_type& operator*() const { return *upcast(node_); }
+        constexpr value_type* operator->() const { return upcast(node_); }
 
         constexpr friend difference_type distance(iterator_impl lhs, iterator_impl rhs)
         {
@@ -98,7 +140,7 @@ class avl_tree {
     private:
         friend class avl_tree;
 
-        explicit iterator_impl(Node* node) : node_{node} {}
+        explicit iterator_impl(avl_node* node) : node_{node} {}
 
         iterator_impl<false> as_mutable() const
             requires(Const)
@@ -106,23 +148,25 @@ class avl_tree {
             return iterator_impl<false>{const_cast<Node*>(node_)};
         }
 
-        Node* node_;
+        avl_node* node_;
     };
 
 public:
     using value_type = Node;
-    using avl_node = std::remove_pointer_t<decltype(Node::parent_)>;
-
     using iterator = iterator_impl<false>;
     using const_iterator = iterator_impl<true>;
 
     static_assert(std::bidirectional_iterator<iterator>);
     static_assert(std::bidirectional_iterator<const_iterator>);
 
-    constexpr iterator begin() { return iterator{upcast(begin_)}; }
-    constexpr iterator end() { return iterator{}; }
+    constexpr iterator begin() { return iterator{leftmost()}; }
+    constexpr iterator end() { return iterator{&header_}; }
     constexpr const_iterator begin() const { return as_mutable().begin(); }
     constexpr const_iterator end() const { return as_mutable().end(); }
+    constexpr std::size_t size() const
+    {
+        return root() ? root()->subtree_size_ : 0;
+    }
 
     constexpr void erase(Node const& node)
     {
@@ -137,25 +181,23 @@ public:
     constexpr void insert(Node& node)
     {
         bst_insert(node);
-        node.balance_ = 0;
-        node.subtree_size_ = 1;
         avl_insert_rebalance(&node);
     }
 
     constexpr iterator lower_bound(Node const& val)
     {
-        Node* res = nullptr;
-        Node* current = upcast(root_);
+        iterator res = end();
+        Node* current = upcast(root());
         while (current) {
             if (*current < val) {
                 current = upcast(current->right_);
             }
             else {
-                res = current;
+                res = iterator{current};
                 current = upcast(current->left_);
             }
         }
-        return iterator{res};
+        return res;
     }
 
     constexpr const_iterator lower_bound(Node const& val) const
@@ -183,6 +225,27 @@ private:
 
     static constexpr Node* upcast(avl_node* p) { return static_cast<Node*>(p); }
 
+    static constexpr bool bst_is_header(avl_node const* x)
+    {
+        if (!x->parent_) {
+            // header of empty tree
+            return true;
+        }
+        if (!x->right_ || !x->left_) {
+            // header always has both right and left
+            return false;
+        }
+        if (x->right_ == x->left_) {
+            // header of single node tree
+            return true;
+        }
+        if (x->right_->parent_ != x || x->left_->parent_ != x) {
+            // size > 1, header can't be the parent of both rightmost and leftmost
+            return true;
+        }
+        return false;
+    }
+
     static constexpr avl_node* bst_minimum(avl_node* x)
     {
         while (x->left_) {
@@ -205,20 +268,27 @@ private:
             return bst_minimum(x->right_);
         }
         avl_node* y = x->parent_;
-        while (y && x == y->right_) {
+        while (x == y->right_) {
             x = y;
             y = y->parent_;
+        }
+        if (x->right_ == y) {
+            // x is the header
+            return x;
         }
         return y;
     }
 
     static constexpr avl_node* bst_predecessor(avl_node* x)
     {
+        if (bst_is_header(x)) {
+            return bst_maximum(x->parent_);
+        }
         if (x->left_) {
             return bst_maximum(x->left_);
         }
         avl_node* y = x->parent_;
-        while (y && x == y->left_) {
+        while (x == y->left_) {
             x = y;
             y = y->parent_;
         }
@@ -227,18 +297,20 @@ private:
 
     constexpr void bst_insert(Node& node)
     {
-        bool is_begin = true;
-        avl_node* parent = nullptr;
-        avl_node** current = &root_;
+        bool is_first = true;
+        bool is_last = true;
+        avl_node* parent = &header_;
+        avl_node** current = &root();
         while (*current) {
             parent = *current;
             parent->subtree_size_++;
             if (*upcast(*current) < node) {
                 current = &(*current)->right_;
-                is_begin = false;
+                is_first = false;
             }
             else {
                 current = &(*current)->left_;
+                is_last = false;
             }
         }
         *current = &node;
@@ -246,16 +318,21 @@ private:
         node.parent_ = parent;
         node.left_ = nullptr;
         node.right_ = nullptr;
+        node.balance_ = 0;
+        node.subtree_size_ = 1;
 
-        if (is_begin) {
-            begin_ = &node;
+        if (is_first) {
+            leftmost() = &node;
+        }
+        if (is_last) {
+            rightmost() = &node;
         }
     }
 
     constexpr void bst_shift_nodes(avl_node const* u, avl_node* v)
     {
-        if (!u->parent_) {
-            root_ = v;
+        if (u == root()) {
+            root() = v;
         }
         else if (u == u->parent_->left_) {
             u->parent_->left_ = v;
@@ -275,9 +352,15 @@ private:
         info.n_is_left = z->parent_ && z == z->parent_->left_;
         if (!z->left_) {
             bst_shift_nodes(z, z->right_);
+            if (z == leftmost()) {
+                leftmost() = z->right_;
+            }
         }
         else if (!z->right_) {
             bst_shift_nodes(z, z->left_);
+            if (z == rightmost()) {
+                rightmost() = z->left_;
+            }
         }
         else {
             avl_node* y = bst_minimum(z->right_);
@@ -393,8 +476,8 @@ private:
 
     static constexpr avl_node* rotate_left_right(avl_node* x, avl_node* z)
     {
-        auto* y = z->right_;
-        auto* tmp1 = y->left_;
+        avl_node* y = z->right_;
+        avl_node* tmp1 = y->left_;
         z->right_ = tmp1;
         if (tmp1) {
             tmp1->parent_ = z;
@@ -402,7 +485,7 @@ private:
         y->left_ = z;
         z->parent_ = y;
 
-        auto* tmp2 = y->right_;
+        avl_node* tmp2 = y->right_;
         x->left_ = tmp2;
         if (tmp2) {
             tmp2->parent_ = x;
@@ -435,11 +518,11 @@ private:
     {
         avl_node* g;
         avl_node* n;
-        avl_node* x = info.x;
         bool n_is_left = info.n_is_left;
         bool height_changed = false;
 
-        for (; x; x = g, n_is_left = x && n == x->left_) {
+        for (avl_node* x = info.x; x != &header_;
+             x = g, n_is_left = x && n == x->left_) {
             g = x->parent_;
             x->subtree_size_--;
 
@@ -487,7 +570,7 @@ private:
             }
 
             n->parent_ = g;
-            if (g) {
+            if (g != &header_) {
                 if (x == g->left_) {
                     g->left_ = n;
                 }
@@ -496,21 +579,21 @@ private:
                 }
             }
             else {
-                root_ = n;
+                root() = n;
             }
             if (!height_changed) {
                 break;
             }
         }
 
-        for (x = g; x; x = x->parent_) {
+        for (avl_node* x = g; x != &header_; x = x->parent_) {
             x->subtree_size_--;
         }
     }
 
     constexpr void avl_insert_rebalance(avl_node* z)
     {
-        for (avl_node* x = z->parent_; x; z = x, x = z->parent_) {
+        for (avl_node* x = z->parent_; x != &header_; z = x, x = z->parent_) {
             avl_node* n;
             avl_node* g = x->parent_;
             if (z == x->left_) {
@@ -551,7 +634,7 @@ private:
             }
 
             n->parent_ = g;
-            if (g) {
+            if (g != &header_) {
                 if (x == g->left_) {
                     g->left_ = n;
                 }
@@ -560,16 +643,23 @@ private:
                 }
             }
             else {
-                root_ = n;
+                root() = n;
             }
             break;
         }
     }
 
-    auto& as_mutable() const { return *const_cast<avl_tree*>(this); }
+    constexpr avl_node*& root() { return header_.parent_; }
+    constexpr avl_node* root() const { return header_.parent_; }
+    constexpr avl_node*& leftmost() { return header_.left_; }
+    constexpr avl_node*& rightmost() { return header_.right_; }
 
-    avl_node* begin_{nullptr};
-    avl_node* root_{nullptr};
+    constexpr avl_tree& as_mutable() const
+    {
+        return *const_cast<avl_tree*>(this);
+    }
+
+    avl_node header_;
 };
 
 }
