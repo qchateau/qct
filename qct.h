@@ -1,7 +1,6 @@
 #pragma once
 
-#include <cmath>
-#include <cstdint>
+#include <functional>
 #include <utility>
 
 namespace qct {
@@ -36,17 +35,17 @@ constexpr bool bst_is_root(auto const* x)
 }
 
 template <int SizeBits = 32, int BalanceBits = std::min(8, 64 - SizeBits)>
-class avl_node {
+class node {
 public:
     static constexpr auto size_bits = SizeBits;
     static constexpr auto balance_bits = BalanceBits;
 
-    template <typename T>
-    friend class avl_tree;
+    template <typename T, typename Comp>
+    friend class tree;
 
     constexpr std::size_t distance_from_begin() const
     {
-        avl_node const* x = this;
+        node const* x = this;
 
         if (algorithms::bst_is_header(x)) {
             if (!x->parent_) {
@@ -71,21 +70,21 @@ public:
 
     constexpr auto balance() const { return balance_; }
     constexpr auto subtree_size() const { return subtree_size_; }
-    constexpr avl_node const* left() const { return left_; }
-    constexpr avl_node const* right() const { return right_; }
-    constexpr avl_node const* parent() const { return parent_; }
+    constexpr node const* left() const { return left_; }
+    constexpr node const* right() const { return right_; }
+    constexpr node const* parent() const { return parent_; }
 
 private:
-    avl_node* parent_{nullptr};
-    avl_node* left_{nullptr};
-    avl_node* right_{nullptr};
+    node* parent_{nullptr};
+    node* left_{nullptr};
+    node* right_{nullptr};
     std::size_t subtree_size_ : SizeBits{0};
     int8_t balance_ : BalanceBits{0};
 };
 
-template <typename Node>
-class avl_tree {
-    using avl_node = std::remove_pointer_t<decltype(Node::parent_)>;
+template <typename Node, typename Comp = std::less<>>
+class tree {
+    using node = std::remove_pointer_t<decltype(Node::parent_)>;
 
     template <bool Const>
     class iterator_impl {
@@ -94,7 +93,7 @@ class avl_tree {
         using value_type = std::conditional_t<Const, Node const, Node>;
 
         constexpr iterator_impl() = default;
-        constexpr iterator_impl(avl_node* node) : node_{node} {}
+        constexpr iterator_impl(node* node) : node_{node} {}
 
         constexpr operator iterator_impl<true>() const
             requires(!Const)
@@ -142,7 +141,7 @@ class avl_tree {
         }
 
     private:
-        friend class avl_tree;
+        friend class tree;
 
         iterator_impl<false> as_mutable() const
             requires(Const)
@@ -150,7 +149,7 @@ class avl_tree {
             return iterator_impl<false>{const_cast<Node*>(node_)};
         }
 
-        avl_node* node_{nullptr};
+        node* node_{nullptr};
     };
 
 public:
@@ -177,13 +176,13 @@ public:
             info.y->balance_ = node.balance_;
             info.y->subtree_size_ = node.subtree_size_;
         }
-        avl_erase_rebalance(info);
+        qct_erase_rebalance(info);
     }
 
     constexpr void insert(Node& node)
     {
-        bst_insert(node);
-        avl_insert_rebalance(&node);
+        qct_insert(node);
+        qct_insert_rebalance(&node);
     }
 
     template <typename T>
@@ -192,7 +191,7 @@ public:
         iterator res = end();
         Node* current = upcast(root());
         while (current) {
-            if (*current < val) {
+            if (Comp{}(*current, val)) {
                 current = upcast(current->right_);
             }
             else {
@@ -210,10 +209,33 @@ public:
     }
 
     template <typename T>
+    constexpr iterator upper_bound(T const& val)
+    {
+        iterator res = end();
+        Node* current = upcast(root());
+        while (current) {
+            if (Comp{}(val, *current)) {
+                res = iterator{current};
+                current = upcast(current->left_);
+            }
+            else {
+                current = upcast(current->right_);
+            }
+        }
+        return res;
+    }
+
+    template <typename T>
+    constexpr const_iterator upper_bound(T const& val) const
+    {
+        return as_mutable().upper_bound(val);
+    }
+
+    template <typename T>
     constexpr iterator find(T const& val)
     {
         auto lb = lower_bound(val);
-        return lb == end() || *lb < val ? end() : lb;
+        return lb == end() || Comp{}(*lb, val) ? end() : lb;
     }
 
     template <typename T>
@@ -224,14 +246,14 @@ public:
 
 private:
     struct erase_rebalance_info {
-        avl_node* x{};
-        avl_node* y{};
+        node* x{};
+        node* y{};
         bool n_is_left{};
     };
 
-    static constexpr Node* upcast(avl_node* p) { return static_cast<Node*>(p); }
+    static constexpr Node* upcast(node* p) { return static_cast<Node*>(p); }
 
-    static constexpr avl_node* bst_minimum(avl_node* x)
+    static constexpr node* bst_minimum(node* x)
     {
         while (x->left_) {
             x = x->left_;
@@ -239,7 +261,7 @@ private:
         return x;
     }
 
-    static constexpr avl_node* bst_maximum(avl_node* x)
+    static constexpr node* bst_maximum(node* x)
     {
         while (x->right_) {
             x = x->right_;
@@ -247,12 +269,12 @@ private:
         return x;
     }
 
-    static constexpr avl_node* bst_successor(avl_node* x)
+    static constexpr node* bst_successor(node* x)
     {
         if (x->right_) {
             return bst_minimum(x->right_);
         }
-        avl_node* y = x->parent_;
+        node* y = x->parent_;
         while (x == y->right_) {
             x = y;
             y = y->parent_;
@@ -264,7 +286,7 @@ private:
         return y;
     }
 
-    static constexpr avl_node* bst_predecessor(avl_node* x)
+    static constexpr node* bst_predecessor(node* x)
     {
         if (algorithms::bst_is_header(x)) {
             return bst_maximum(x->parent_);
@@ -272,7 +294,7 @@ private:
         if (x->left_) {
             return bst_maximum(x->left_);
         }
-        avl_node* y = x->parent_;
+        node* y = x->parent_;
         while (x == y->left_) {
             x = y;
             y = y->parent_;
@@ -280,41 +302,7 @@ private:
         return y;
     }
 
-    constexpr void bst_insert(Node& node)
-    {
-        bool is_first = true;
-        bool is_last = true;
-        avl_node* parent = &header_;
-        avl_node** current = &root();
-        while (*current) {
-            parent = *current;
-            parent->subtree_size_++;
-            if (*upcast(*current) < node) {
-                current = &(*current)->right_;
-                is_first = false;
-            }
-            else {
-                current = &(*current)->left_;
-                is_last = false;
-            }
-        }
-        *current = &node;
-
-        node.parent_ = parent;
-        node.left_ = nullptr;
-        node.right_ = nullptr;
-        node.balance_ = 0;
-        node.subtree_size_ = 1;
-
-        if (is_first) {
-            leftmost() = &node;
-        }
-        if (is_last) {
-            rightmost() = &node;
-        }
-    }
-
-    constexpr void bst_shift_nodes(avl_node const* u, avl_node* v)
+    constexpr void bst_shift_nodes(node const* u, node* v)
     {
         if (u == root()) {
             root() = v;
@@ -330,7 +318,41 @@ private:
         }
     }
 
-    constexpr erase_rebalance_info bst_erase(avl_node const* z)
+    constexpr void qct_insert(Node& x)
+    {
+        bool is_first = true;
+        bool is_last = true;
+        node* parent = &header_;
+        node** current = &root();
+        while (*current) {
+            parent = *current;
+            parent->subtree_size_++;
+            if (Comp{}(*upcast(*current), x)) {
+                current = &(*current)->right_;
+                is_first = false;
+            }
+            else {
+                current = &(*current)->left_;
+                is_last = false;
+            }
+        }
+        *current = &x;
+
+        x.parent_ = parent;
+        x.left_ = nullptr;
+        x.right_ = nullptr;
+        x.balance_ = 0;
+        x.subtree_size_ = 1;
+
+        if (is_first) {
+            leftmost() = &x;
+        }
+        if (is_last) {
+            rightmost() = &x;
+        }
+    }
+
+    constexpr erase_rebalance_info bst_erase(node const* z)
     {
         erase_rebalance_info info{};
         info.x = z->parent_;
@@ -348,7 +370,7 @@ private:
             }
         }
         else {
-            avl_node* y = bst_minimum(z->right_);
+            node* y = bst_minimum(z->right_);
             if (y->parent_ != z) {
                 info.x = y->parent_;
                 info.n_is_left = true;
@@ -369,9 +391,9 @@ private:
         return info;
     }
 
-    static constexpr avl_node* rotate_left(avl_node* x, avl_node* z)
+    static constexpr node* qct_rotate_left(node* x, node* z)
     {
-        avl_node* tmp = z->left_;
+        node* tmp = z->left_;
         x->right_ = tmp;
         if (tmp) {
             tmp->parent_ = x;
@@ -394,9 +416,9 @@ private:
         return z;
     }
 
-    static constexpr avl_node* rotate_right(avl_node* x, avl_node* z)
+    static constexpr node* qct_rotate_right(node* x, node* z)
     {
-        avl_node* tmp = z->right_;
+        node* tmp = z->right_;
         x->left_ = tmp;
         if (tmp) {
             tmp->parent_ = x;
@@ -419,10 +441,10 @@ private:
         return z;
     }
 
-    static constexpr avl_node* rotate_right_left(avl_node* x, avl_node* z)
+    static constexpr node* qct_rotate_right_left(node* x, node* z)
     {
-        avl_node* y = z->left_;
-        avl_node* tmp1 = y->right_;
+        node* y = z->left_;
+        node* tmp1 = y->right_;
         z->left_ = tmp1;
         if (tmp1) {
             tmp1->parent_ = z;
@@ -430,7 +452,7 @@ private:
         y->right_ = z;
         z->parent_ = y;
 
-        avl_node* tmp2 = y->left_;
+        node* tmp2 = y->left_;
         x->right_ = tmp2;
         if (tmp2) {
             tmp2->parent_ = x;
@@ -459,10 +481,10 @@ private:
         return y;
     }
 
-    static constexpr avl_node* rotate_left_right(avl_node* x, avl_node* z)
+    static constexpr node* qct_rotate_left_right(node* x, node* z)
     {
-        avl_node* y = z->right_;
-        avl_node* tmp1 = y->left_;
+        node* y = z->right_;
+        node* tmp1 = y->left_;
         z->right_ = tmp1;
         if (tmp1) {
             tmp1->parent_ = z;
@@ -470,7 +492,7 @@ private:
         y->left_ = z;
         z->parent_ = y;
 
-        avl_node* tmp2 = y->right_;
+        node* tmp2 = y->right_;
         x->left_ = tmp2;
         if (tmp2) {
             tmp2->parent_ = x;
@@ -499,27 +521,85 @@ private:
         return y;
     }
 
-    constexpr void avl_erase_rebalance(erase_rebalance_info info)
+    constexpr void qct_insert_rebalance(node* z)
     {
-        avl_node* g;
-        avl_node* n;
+        for (node* x = z->parent_; x != &header_; z = x, x = z->parent_) {
+            node* n;
+            node* g = x->parent_;
+            if (z == x->left_) {
+                if (x->balance_ < 0) {
+                    if (z->balance_ > 0) {
+                        n = qct_rotate_left_right(x, z);
+                    }
+                    else {
+                        n = qct_rotate_right(x, z);
+                    }
+                }
+                else if (x->balance_ > 0) {
+                    x->balance_ = 0;
+                    break;
+                }
+                else {
+                    x->balance_ = -1;
+                    continue;
+                }
+            }
+            else {
+                if (x->balance_ > 0) {
+                    if (z->balance_ < 0) {
+                        n = qct_rotate_right_left(x, z);
+                    }
+                    else {
+                        n = qct_rotate_left(x, z);
+                    }
+                }
+                else if (x->balance_ < 0) {
+                    x->balance_ = 0;
+                    break;
+                }
+                else {
+                    x->balance_ = 1;
+                    continue;
+                }
+            }
+
+            n->parent_ = g;
+            if (g != &header_) {
+                if (x == g->left_) {
+                    g->left_ = n;
+                }
+                else {
+                    g->right_ = n;
+                }
+            }
+            else {
+                root() = n;
+            }
+            break;
+        }
+    }
+
+    constexpr void qct_erase_rebalance(erase_rebalance_info info)
+    {
+        node* g;
+        node* n;
         bool n_is_left = info.n_is_left;
         bool height_changed = false;
 
-        for (avl_node* x = info.x; x != &header_;
+        for (node* x = info.x; x != &header_;
              x = g, n_is_left = x && n == x->left_) {
             g = x->parent_;
             x->subtree_size_--;
 
             if (n_is_left) {
                 if (x->balance_ > 0) {
-                    avl_node* z = x->right_;
+                    node* z = x->right_;
                     height_changed = z->balance_ != 0;
                     if (z->balance_ < 0) {
-                        n = rotate_right_left(x, z);
+                        n = qct_rotate_right_left(x, z);
                     }
                     else {
-                        n = rotate_left(x, z);
+                        n = qct_rotate_left(x, z);
                     }
                 }
                 else if (x->balance_ < 0) {
@@ -534,13 +614,13 @@ private:
             }
             else {
                 if (x->balance_ < 0) {
-                    avl_node* z = x->left_;
+                    node* z = x->left_;
                     height_changed = z->balance_ != 0;
                     if (z->balance_ > 0) {
-                        n = rotate_left_right(x, z);
+                        n = qct_rotate_left_right(x, z);
                     }
                     else {
-                        n = rotate_right(x, z);
+                        n = qct_rotate_right(x, z);
                     }
                 }
                 else if (x->balance_ > 0) {
@@ -571,80 +651,19 @@ private:
             }
         }
 
-        for (avl_node* x = g; x != &header_; x = x->parent_) {
+        for (node* x = g; x != &header_; x = x->parent_) {
             x->subtree_size_--;
         }
     }
 
-    constexpr void avl_insert_rebalance(avl_node* z)
-    {
-        for (avl_node* x = z->parent_; x != &header_; z = x, x = z->parent_) {
-            avl_node* n;
-            avl_node* g = x->parent_;
-            if (z == x->left_) {
-                if (x->balance_ < 0) {
-                    if (z->balance_ > 0) {
-                        n = rotate_left_right(x, z);
-                    }
-                    else {
-                        n = rotate_right(x, z);
-                    }
-                }
-                else if (x->balance_ > 0) {
-                    x->balance_ = 0;
-                    break;
-                }
-                else {
-                    x->balance_ = -1;
-                    continue;
-                }
-            }
-            else {
-                if (x->balance_ > 0) {
-                    if (z->balance_ < 0) {
-                        n = rotate_right_left(x, z);
-                    }
-                    else {
-                        n = rotate_left(x, z);
-                    }
-                }
-                else if (x->balance_ < 0) {
-                    x->balance_ = 0;
-                    break;
-                }
-                else {
-                    x->balance_ = 1;
-                    continue;
-                }
-            }
+    constexpr node*& root() { return header_.parent_; }
+    constexpr node* root() const { return header_.parent_; }
+    constexpr node*& leftmost() { return header_.left_; }
+    constexpr node*& rightmost() { return header_.right_; }
 
-            n->parent_ = g;
-            if (g != &header_) {
-                if (x == g->left_) {
-                    g->left_ = n;
-                }
-                else {
-                    g->right_ = n;
-                }
-            }
-            else {
-                root() = n;
-            }
-            break;
-        }
-    }
+    constexpr tree& as_mutable() const { return *const_cast<tree*>(this); }
 
-    constexpr avl_node*& root() { return header_.parent_; }
-    constexpr avl_node* root() const { return header_.parent_; }
-    constexpr avl_node*& leftmost() { return header_.left_; }
-    constexpr avl_node*& rightmost() { return header_.right_; }
-
-    constexpr avl_tree& as_mutable() const
-    {
-        return *const_cast<avl_tree*>(this);
-    }
-
-    avl_node header_;
+    node header_;
 };
 
 }

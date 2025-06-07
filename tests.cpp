@@ -5,10 +5,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "avl.h"
+#include "qct.h"
 
 template <typename T>
-class qct_node : public qct::avl_node<> {
+class qct_node : public qct::node<> {
 public:
     using value_type = T;
 
@@ -87,7 +87,7 @@ TEST_CASE("Insert", "[insert]")
         std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
 
     using Node = qct_node<int>;
-    using Tree = qct::avl_tree<Node>;
+    using Tree = qct::tree<Node>;
 
     std::forward_list<Node> nodes;
     Tree tree;
@@ -109,7 +109,7 @@ TEST_CASE("Erase", "[erase]")
         std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
 
     using Node = qct_node<int>;
-    using Tree = qct::avl_tree<Node>;
+    using Tree = qct::tree<Node>;
 
     std::forward_list<Node> nodes;
     Tree tree;

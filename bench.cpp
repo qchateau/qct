@@ -7,10 +7,10 @@
 #include <boost/intrusive/avl_set.hpp>
 #include <boost/intrusive/set.hpp>
 
-#include "avl.h"
+#include "qct.h"
 
 template <typename T>
-class qct_node : public qct::avl_node<> {
+class qct_node : public qct::node<> {
 public:
     using value_type = T;
 
@@ -308,7 +308,7 @@ BENCHMARK(BM_set_insert);
 
 static void BM_avl_insert(benchmark::State& state)
 {
-    BM_insert<qct::avl_tree, qct_node<int64_t>, int64_t>(state);
+    BM_insert<qct::tree, qct_node<int64_t>, int64_t>(state);
 }
 BENCHMARK(BM_avl_insert);
 
@@ -333,7 +333,7 @@ BENCHMARK(BM_set_erase);
 
 static void BM_avl_erase(benchmark::State& state)
 {
-    BM_erase<qct::avl_tree, qct_node<int64_t>, int64_t>(state);
+    BM_erase<qct::tree, qct_node<int64_t>, int64_t>(state);
 }
 BENCHMARK(BM_avl_erase);
 
@@ -358,7 +358,7 @@ BENCHMARK(BM_set_find);
 
 static void BM_avl_find(benchmark::State& state)
 {
-    BM_find<qct::avl_tree, qct_node<int64_t>, int64_t>(state);
+    BM_find<qct::tree, qct_node<int64_t>, int64_t>(state);
 }
 BENCHMARK(BM_avl_find);
 
@@ -383,7 +383,7 @@ BENCHMARK(BM_set_lower_bound);
 
 static void BM_avl_lower_bound(benchmark::State& state)
 {
-    BM_lower_bound<qct::avl_tree, qct_node<int64_t>, int64_t>(state);
+    BM_lower_bound<qct::tree, qct_node<int64_t>, int64_t>(state);
 }
 BENCHMARK(BM_avl_lower_bound);
 
@@ -409,7 +409,7 @@ BENCHMARK(BM_set_lower_bound_distance);
 
 static void BM_avl_lower_bound_distance(benchmark::State& state)
 {
-    BM_lower_bound_distance<qct::avl_tree, qct_node<int64_t>, int64_t>(state);
+    BM_lower_bound_distance<qct::tree, qct_node<int64_t>, int64_t>(state);
 }
 BENCHMARK(BM_avl_lower_bound_distance);
 
@@ -435,7 +435,7 @@ BENCHMARK(BM_set_iter);
 
 static void BM_avl_iter(benchmark::State& state)
 {
-    BM_iter<qct::avl_tree, qct_node<int64_t>, int64_t>(state);
+    BM_iter<qct::tree, qct_node<int64_t>, int64_t>(state);
 }
 BENCHMARK(BM_avl_iter);
 
@@ -460,7 +460,7 @@ BENCHMARK(BM_set_reverse_iter);
 
 static void BM_avl_reverse_iter(benchmark::State& state)
 {
-    BM_reverse_iter<qct::avl_tree, qct_node<int64_t>, int64_t>(state);
+    BM_reverse_iter<qct::tree, qct_node<int64_t>, int64_t>(state);
 }
 BENCHMARK(BM_avl_reverse_iter);
 
