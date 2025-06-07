@@ -135,3 +135,62 @@ TEST_CASE("Erase", "[erase]")
 
     check_invariants(tree);
 }
+
+TEST_CASE("Find", "[find]")
+{
+    std::mt19937 gen(seed);
+    std::uniform_int_distribution<int> distrib(
+        std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
+
+    using Node = qct_node<int>;
+    using Tree = qct::tree<Node>;
+
+    std::forward_list<Node> nodes;
+    Tree tree;
+
+    auto const n = 1000000;
+    for (int i = 0; i < n; ++i) {
+        auto x = distrib(gen);
+        nodes.push_front(Node{x});
+        tree.insert(nodes.front());
+    }
+    auto const min = tree.begin()->data();
+    auto const max = std::prev(tree.end())->data();
+
+    CHECK(tree.find(min) == tree.begin());
+    CHECK(tree.find(max) == std::prev(tree.end()));
+
+    for (int i = 0; i < n; ++i) {
+        auto x = distrib(gen);
+        auto lb = tree.lower_bound(x);
+        auto ub = tree.upper_bound(x);
+        auto f = tree.find(x);
+
+        if (lb == tree.end()) {
+            CHECK(f == tree.end());
+            CHECK(ub == tree.end());
+            CHECK(max < x);
+        }
+        else if (ub == tree.begin()) {
+            CHECK(f == tree.end());
+            CHECK(lb == tree.begin());
+            CHECK(x < min);
+        }
+        else if (lb == ub) {
+            CHECK(f != tree.end());
+            CHECK(f->data() != x);
+            CHECK(f == lb);
+            CHECK(f == ub);
+            CHECK(!(lb->data() < x));
+            CHECK(x < ub->data());
+        }
+        else {
+            CHECK(f != tree.end());
+            CHECK(f->data() == x);
+            CHECK(f == lb);
+            for (auto it = lb; it != ub; ++it) {
+                CHECK(x == it->data());
+            }
+        }
+    }
+}
