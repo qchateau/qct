@@ -75,7 +75,10 @@ static void BM_insert(benchmark::State& state)
     std::uniform_int_distribution<Data> distrib(
         std::numeric_limits<Data>::min(), std::numeric_limits<Data>::max());
 
-    std::list<Node> nodes;
+    // Vector of unique_ptr is important:
+    // Nodes must be allocated on the heap to be comparable with std::set
+    // Nodes must not be embedded in another stl node (as would happen with std::list<Node>)
+    std::vector<std::unique_ptr<Node>> nodes;
     Tree tree;
 
     for (std::size_t i = 0; i < init_size; ++i) {
@@ -84,8 +87,8 @@ static void BM_insert(benchmark::State& state)
             tree.insert(x);
         }
         else {
-            nodes.push_back(Node{x});
-            tree.insert(nodes.back());
+            nodes.push_back(std::make_unique<Node>(x));
+            tree.insert(*nodes.back());
         }
     }
 
@@ -95,8 +98,8 @@ static void BM_insert(benchmark::State& state)
             tree.insert(x);
         }
         else {
-            nodes.push_back(Node{x});
-            tree.insert(nodes.back());
+            nodes.push_back(std::make_unique<Node>(x));
+            tree.insert(*nodes.back());
         }
 
         benchmark::DoNotOptimize(tree.begin());
@@ -118,7 +121,7 @@ static void BM_erase(benchmark::State& state)
     std::uniform_int_distribution<Data> distrib(
         std::numeric_limits<Data>::min(), std::numeric_limits<Data>::max());
 
-    std::list<Node> nodes;
+    std::vector<std::unique_ptr<Node>> nodes;
     Tree tree;
 
     for (std::size_t i = 0; i < init_size; ++i) {
@@ -127,8 +130,8 @@ static void BM_erase(benchmark::State& state)
             tree.insert(x);
         }
         else {
-            nodes.push_back(Node{x});
-            tree.insert(nodes.back());
+            nodes.push_back(std::make_unique<Node>(x));
+            tree.insert(*nodes.back());
         }
     }
 
@@ -162,7 +165,7 @@ static void BM_find(benchmark::State& state)
     std::uniform_int_distribution<Data> distrib(
         std::numeric_limits<Data>::min(), std::numeric_limits<Data>::max());
 
-    std::list<Node> nodes;
+    std::vector<std::unique_ptr<Node>> nodes;
     Tree tree;
 
     for (std::size_t i = 0; i < init_size; ++i) {
@@ -171,8 +174,8 @@ static void BM_find(benchmark::State& state)
             tree.insert(x);
         }
         else {
-            nodes.push_back(Node{x});
-            tree.insert(nodes.back());
+            nodes.push_back(std::make_unique<Node>(x));
+            tree.insert(*nodes.back());
         }
     }
 
@@ -190,7 +193,7 @@ static void BM_lower_bound(benchmark::State& state)
     std::uniform_int_distribution<Data> distrib(
         std::numeric_limits<Data>::min(), std::numeric_limits<Data>::max());
 
-    std::list<Node> nodes;
+    std::vector<std::unique_ptr<Node>> nodes;
     Tree tree;
 
     for (std::size_t i = 0; i < init_size; ++i) {
@@ -199,8 +202,8 @@ static void BM_lower_bound(benchmark::State& state)
             tree.insert(x);
         }
         else {
-            nodes.push_back(Node{x});
-            tree.insert(nodes.back());
+            nodes.push_back(std::make_unique<Node>(x));
+            tree.insert(*nodes.back());
         }
     }
 
@@ -218,7 +221,7 @@ static void BM_lower_bound_distance(benchmark::State& state)
     std::uniform_int_distribution<Data> distrib(
         std::numeric_limits<Data>::min(), std::numeric_limits<Data>::max());
 
-    std::list<Node> nodes;
+    std::vector<std::unique_ptr<Node>> nodes;
     Tree tree;
 
     for (std::size_t i = 0; i < init_size; ++i) {
@@ -227,8 +230,8 @@ static void BM_lower_bound_distance(benchmark::State& state)
             tree.insert(x);
         }
         else {
-            nodes.push_back(Node{x});
-            tree.insert(nodes.back());
+            nodes.push_back(std::make_unique<Node>(x));
+            tree.insert(*nodes.back());
         }
     }
 
@@ -247,7 +250,7 @@ static void BM_iter(benchmark::State& state)
     std::uniform_int_distribution<Data> distrib(
         std::numeric_limits<Data>::min(), std::numeric_limits<Data>::max());
 
-    std::list<Node> nodes;
+    std::vector<std::unique_ptr<Node>> nodes;
     Tree tree;
 
     for (std::size_t i = 0; i < init_size; ++i) {
@@ -256,17 +259,44 @@ static void BM_iter(benchmark::State& state)
             tree.insert(x);
         }
         else {
-            nodes.push_back(Node{x});
-            tree.insert(nodes.back());
+            nodes.push_back(std::make_unique<Node>(x));
+            tree.insert(*nodes.back());
         }
     }
 
     for (auto _ : state) {
-        int x{};
-        for (auto const& _ : tree) {
-            x++;
+        for (auto it = tree.begin(); it != tree.end(); ++it) {
+            benchmark::DoNotOptimize(it);
         }
-        benchmark::DoNotOptimize(x);
+    }
+}
+
+template <template <typename...> typename TreeT, typename Node, typename Data>
+static void BM_reverse_iter(benchmark::State& state)
+{
+    using Tree = TreeT<Node>;
+    std::mt19937 gen(seed());
+    std::uniform_int_distribution<Data> distrib(
+        std::numeric_limits<Data>::min(), std::numeric_limits<Data>::max());
+
+    std::vector<std::unique_ptr<Node>> nodes;
+    Tree tree;
+
+    for (std::size_t i = 0; i < init_size; ++i) {
+        auto x = distrib(gen);
+        if constexpr (std::same_as<Data, Node>) {
+            tree.insert(x);
+        }
+        else {
+            nodes.push_back(std::make_unique<Node>(x));
+            tree.insert(*nodes.back());
+        }
+    }
+
+    for (auto _ : state) {
+        for (auto it = tree.end(); it != tree.begin(); --it) {
+            benchmark::DoNotOptimize(it);
+        }
     }
 }
 
@@ -421,5 +451,31 @@ static void BM_boost_rb_iter(benchmark::State& state)
     BM_iter<boost::intrusive::multiset, boost_rb_node<int64_t>, int64_t>(state);
 }
 BENCHMARK(BM_boost_rb_iter);
+
+static void BM_set_reverse_iter(benchmark::State& state)
+{
+    BM_reverse_iter<std::multiset, int64_t, int64_t>(state);
+}
+BENCHMARK(BM_set_reverse_iter);
+
+static void BM_avl_reverse_iter(benchmark::State& state)
+{
+    BM_reverse_iter<qct::avl_tree, qct_node<int64_t>, int64_t>(state);
+}
+BENCHMARK(BM_avl_reverse_iter);
+
+static void BM_boost_avl_reverse_iter(benchmark::State& state)
+{
+    BM_reverse_iter<boost::intrusive::avl_multiset, boost_avl_node<int64_t>, int64_t>(
+        state);
+}
+BENCHMARK(BM_boost_avl_reverse_iter);
+
+static void BM_boost_rb_reverse_iter(benchmark::State& state)
+{
+    BM_reverse_iter<boost::intrusive::multiset, boost_rb_node<int64_t>, int64_t>(
+        state);
+}
+BENCHMARK(BM_boost_rb_reverse_iter);
 
 BENCHMARK_MAIN();

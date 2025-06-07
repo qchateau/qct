@@ -90,7 +90,7 @@ class avl_tree {
         using difference_type = std::make_signed_t<std::size_t>;
         using value_type = std::conditional_t<Const, Node const, Node>;
 
-        constexpr explicit iterator_impl() : iterator_impl{nullptr} {}
+        constexpr iterator_impl() = default;
 
         constexpr operator iterator_impl<true>() const
             requires(!Const)
@@ -148,7 +148,7 @@ class avl_tree {
             return iterator_impl<false>{const_cast<Node*>(node_)};
         }
 
-        avl_node* node_;
+        avl_node* node_{nullptr};
     };
 
 public:

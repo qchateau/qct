@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <forward_list>
 #include <random>
+#include <ranges>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,6 +17,10 @@ public:
     friend auto operator<=>(qct_node const& lhs, qct_node const& rhs)
     {
         return lhs.x_ <=> rhs.x_;
+    }
+    friend auto operator==(qct_node const& lhs, qct_node const& rhs)
+    {
+        return lhs.x_ == rhs.x_;
     }
 
     T const& data() const { return x_; }
@@ -34,12 +39,20 @@ void check_invariants(Tree const& tree)
     CHECK(tree.begin()->distance_from_begin() == 0);
     CHECK(tree.end()->distance_from_begin() == tree.size());
 
-    CHECK(tree.size() == std::distance(tree.begin(), tree.end()));
-    CHECK(
-        distance(tree.begin(), tree.end())
-        == std::distance(tree.begin(), tree.end()));
+    CHECK(tree.size() == std::ranges::distance(tree));
+    CHECK(distance(tree.begin(), tree.end()) == std::ranges::distance(tree));
+    CHECK(std::ranges::is_sorted(tree));
 
-    CHECK(std::is_sorted(tree.begin(), tree.end()));
+    CHECK(
+        tree.size()
+        == std::distance(
+            std::make_reverse_iterator(tree.end()),
+            std::make_reverse_iterator(tree.begin())));
+
+    CHECK(std::ranges::is_sorted(
+        std::make_reverse_iterator(tree.end()),
+        std::make_reverse_iterator(tree.begin()),
+        std::greater{}));
 
     for (auto const& n : tree) {
         if (n.right()) {
