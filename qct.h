@@ -43,6 +43,8 @@ public:
     template <typename T, typename Comp>
     friend class tree;
 
+    constexpr auto operator<=>(node const&) const { return true <=> true; }
+
     constexpr std::size_t distance_from_begin() const
     {
         node const* x = this;
@@ -154,6 +156,7 @@ class tree {
 
 public:
     using value_type = Node;
+    using value_compare = Comp;
     using iterator = iterator_impl<false>;
     using const_iterator = iterator_impl<true>;
 
@@ -235,7 +238,7 @@ public:
     constexpr iterator find(T const& val)
     {
         auto lb = lower_bound(val);
-        return lb == end() || Comp{}(*lb, val) ? end() : lb;
+        return lb == end() || Comp{}(val, *lb) ? end() : lb;
     }
 
     template <typename T>
@@ -320,8 +323,8 @@ private:
 
     constexpr void qct_insert(Node& x)
     {
-        bool is_first = true;
-        bool is_last = true;
+        bool is_leftmost = true;
+        bool is_rightmost = true;
         node* parent = &header_;
         node** current = &root();
         while (*current) {
@@ -329,11 +332,11 @@ private:
             parent->subtree_size_++;
             if (Comp{}(*upcast(*current), x)) {
                 current = &(*current)->right_;
-                is_first = false;
+                is_leftmost = false;
             }
             else {
                 current = &(*current)->left_;
-                is_last = false;
+                is_rightmost = false;
             }
         }
         *current = &x;
@@ -344,10 +347,10 @@ private:
         x.balance_ = 0;
         x.subtree_size_ = 1;
 
-        if (is_first) {
+        if (is_leftmost) {
             leftmost() = &x;
         }
-        if (is_last) {
+        if (is_rightmost) {
             rightmost() = &x;
         }
     }
@@ -360,13 +363,15 @@ private:
         if (!z->left_) {
             bst_shift_nodes(z, z->right_);
             if (z == leftmost()) {
-                leftmost() = z->right_;
+                // z->right could be null
+                leftmost() = bst_minimum(z->parent_);
             }
         }
         else if (!z->right_) {
             bst_shift_nodes(z, z->left_);
             if (z == rightmost()) {
-                rightmost() = z->left_;
+                // z->left can't be null
+                rightmost() = bst_maximum(z->left_);
             }
         }
         else {

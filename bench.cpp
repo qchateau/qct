@@ -10,13 +10,13 @@
 #include "qct.h"
 
 template <typename T>
-class qct_node : public qct::node<> {
+class comparable_node : public qct::node<> {
 public:
     using value_type = T;
 
-    qct_node(T x) : x_(x) {}
+    comparable_node(T x) : x_(x) {}
 
-    friend auto operator<=>(qct_node const& lhs, qct_node const& rhs)
+    friend auto operator<=>(comparable_node const& lhs, comparable_node const& rhs)
     {
         return lhs.x_ <=> rhs.x_;
     }
@@ -57,7 +57,7 @@ private:
     T x_;
 };
 
-constexpr auto a = sizeof(qct_node<int64_t>);
+constexpr auto a = sizeof(comparable_node<int64_t>);
 constexpr auto b = sizeof(boost_avl_node<int64_t>);
 constexpr auto init_size = 100000;
 
@@ -306,11 +306,11 @@ static void BM_set_insert(benchmark::State& state)
 }
 BENCHMARK(BM_set_insert);
 
-static void BM_avl_insert(benchmark::State& state)
+static void BM_qct_insert(benchmark::State& state)
 {
-    BM_insert<qct::tree, qct_node<int64_t>, int64_t>(state);
+    BM_insert<qct::tree, comparable_node<int64_t>, int64_t>(state);
 }
-BENCHMARK(BM_avl_insert);
+BENCHMARK(BM_qct_insert);
 
 static void BM_boost_avl_insert(benchmark::State& state)
 {
@@ -331,11 +331,11 @@ static void BM_set_erase(benchmark::State& state)
 }
 BENCHMARK(BM_set_erase);
 
-static void BM_avl_erase(benchmark::State& state)
+static void BM_qct_erase(benchmark::State& state)
 {
-    BM_erase<qct::tree, qct_node<int64_t>, int64_t>(state);
+    BM_erase<qct::tree, comparable_node<int64_t>, int64_t>(state);
 }
-BENCHMARK(BM_avl_erase);
+BENCHMARK(BM_qct_erase);
 
 static void BM_boost_avl_erase(benchmark::State& state)
 {
@@ -356,11 +356,11 @@ static void BM_set_find(benchmark::State& state)
 }
 BENCHMARK(BM_set_find);
 
-static void BM_avl_find(benchmark::State& state)
+static void BM_qct_find(benchmark::State& state)
 {
-    BM_find<qct::tree, qct_node<int64_t>, int64_t>(state);
+    BM_find<qct::tree, comparable_node<int64_t>, int64_t>(state);
 }
-BENCHMARK(BM_avl_find);
+BENCHMARK(BM_qct_find);
 
 static void BM_boost_avl_find(benchmark::State& state)
 {
@@ -381,11 +381,11 @@ static void BM_set_lower_bound(benchmark::State& state)
 }
 BENCHMARK(BM_set_lower_bound);
 
-static void BM_avl_lower_bound(benchmark::State& state)
+static void BM_qct_lower_bound(benchmark::State& state)
 {
-    BM_lower_bound<qct::tree, qct_node<int64_t>, int64_t>(state);
+    BM_lower_bound<qct::tree, comparable_node<int64_t>, int64_t>(state);
 }
-BENCHMARK(BM_avl_lower_bound);
+BENCHMARK(BM_qct_lower_bound);
 
 static void BM_boost_avl_lower_bound(benchmark::State& state)
 {
@@ -407,11 +407,11 @@ static void BM_set_lower_bound_distance(benchmark::State& state)
 }
 BENCHMARK(BM_set_lower_bound_distance);
 
-static void BM_avl_lower_bound_distance(benchmark::State& state)
+static void BM_qct_lower_bound_distance(benchmark::State& state)
 {
-    BM_lower_bound_distance<qct::tree, qct_node<int64_t>, int64_t>(state);
+    BM_lower_bound_distance<qct::tree, comparable_node<int64_t>, int64_t>(state);
 }
-BENCHMARK(BM_avl_lower_bound_distance);
+BENCHMARK(BM_qct_lower_bound_distance);
 
 static void BM_boost_avl_lower_bound_distance(benchmark::State& state)
 {
@@ -433,11 +433,11 @@ static void BM_set_iter(benchmark::State& state)
 }
 BENCHMARK(BM_set_iter);
 
-static void BM_avl_iter(benchmark::State& state)
+static void BM_qct_iter(benchmark::State& state)
 {
-    BM_iter<qct::tree, qct_node<int64_t>, int64_t>(state);
+    BM_iter<qct::tree, comparable_node<int64_t>, int64_t>(state);
 }
-BENCHMARK(BM_avl_iter);
+BENCHMARK(BM_qct_iter);
 
 static void BM_boost_avl_iter(benchmark::State& state)
 {
@@ -458,11 +458,11 @@ static void BM_set_reverse_iter(benchmark::State& state)
 }
 BENCHMARK(BM_set_reverse_iter);
 
-static void BM_avl_reverse_iter(benchmark::State& state)
+static void BM_qct_reverse_iter(benchmark::State& state)
 {
-    BM_reverse_iter<qct::tree, qct_node<int64_t>, int64_t>(state);
+    BM_reverse_iter<qct::tree, comparable_node<int64_t>, int64_t>(state);
 }
-BENCHMARK(BM_avl_reverse_iter);
+BENCHMARK(BM_qct_reverse_iter);
 
 static void BM_boost_avl_reverse_iter(benchmark::State& state)
 {
