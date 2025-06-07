@@ -5,6 +5,35 @@
 #include <utility>
 
 namespace qct {
+namespace algorithms {
+
+constexpr bool bst_is_header(auto const* x)
+{
+    if (!x->parent()) {
+        // header of empty tree
+        return true;
+    }
+    if (!x->right() || !x->left()) {
+        // header always has both right and left
+        return false;
+    }
+    if (x->right() == x->left()) {
+        // header of single node tree
+        return true;
+    }
+    if (x->right()->parent() != x || x->left()->parent() != x) {
+        // size > 1, header can't be the parent of both rightmost and leftmost
+        return true;
+    }
+    return false;
+}
+
+constexpr bool bst_is_root(auto const* x)
+{
+    return x->parent()->parent() == x;
+}
+
+}
 
 template <int SizeBits = 32, int BalanceBits = std::min(8, 64 - SizeBits)>
 class avl_node {
@@ -19,7 +48,7 @@ public:
     {
         avl_node const* x = this;
 
-        if (bst_is_header(x)) {
+        if (algorithms::bst_is_header(x)) {
             if (!x->parent_) {
                 return 0;
             }
@@ -32,7 +61,7 @@ public:
             distance += x->left_->subtree_size_;
         }
 
-        for (; !bst_is_root(x); x = x->parent_) {
+        for (; !algorithms::bst_is_root(x); x = x->parent_) {
             if (x == x->parent_->right_) {
                 distance += x->parent_->subtree_size_ - x->subtree_size_;
             }
@@ -47,32 +76,6 @@ public:
     constexpr avl_node const* parent() const { return parent_; }
 
 private:
-    static constexpr bool bst_is_header(avl_node const* x)
-    {
-        if (!x->parent_) {
-            // header of empty tree
-            return true;
-        }
-        if (!x->right_ || !x->left_) {
-            // header always has both right and left
-            return false;
-        }
-        if (x->right_ == x->left_) {
-            // header of single node tree
-            return true;
-        }
-        if (x->right_->parent_ != x || x->left_->parent_ != x) {
-            // size > 1, header can't be the parent of both rightmost and leftmost
-            return true;
-        }
-        return false;
-    }
-
-    static constexpr bool bst_is_root(avl_node const* x)
-    {
-        return x->parent_->parent_ == x;
-    }
-
     avl_node* parent_{nullptr};
     avl_node* left_{nullptr};
     avl_node* right_{nullptr};
@@ -91,6 +94,7 @@ class avl_tree {
         using value_type = std::conditional_t<Const, Node const, Node>;
 
         constexpr iterator_impl() = default;
+        constexpr iterator_impl(avl_node* node) : node_{node} {}
 
         constexpr operator iterator_impl<true>() const
             requires(!Const)
@@ -140,8 +144,6 @@ class avl_tree {
     private:
         friend class avl_tree;
 
-        explicit iterator_impl(avl_node* node) : node_{node} {}
-
         iterator_impl<false> as_mutable() const
             requires(Const)
         {
@@ -184,7 +186,8 @@ public:
         avl_insert_rebalance(&node);
     }
 
-    constexpr iterator lower_bound(Node const& val)
+    template <typename T>
+    constexpr iterator lower_bound(T const& val)
     {
         iterator res = end();
         Node* current = upcast(root());
@@ -200,18 +203,21 @@ public:
         return res;
     }
 
-    constexpr const_iterator lower_bound(Node const& val) const
+    template <typename T>
+    constexpr const_iterator lower_bound(T const& val) const
     {
         return as_mutable().lower_bound(val);
     }
 
-    constexpr iterator find(Node const& val)
+    template <typename T>
+    constexpr iterator find(T const& val)
     {
         auto lb = lower_bound(val);
         return lb == end() || *lb < val ? end() : lb;
     }
 
-    constexpr const_iterator find(Node const& val) const
+    template <typename T>
+    constexpr const_iterator find(T const& val) const
     {
         return as_mutable().find(val);
     }
@@ -224,27 +230,6 @@ private:
     };
 
     static constexpr Node* upcast(avl_node* p) { return static_cast<Node*>(p); }
-
-    static constexpr bool bst_is_header(avl_node const* x)
-    {
-        if (!x->parent_) {
-            // header of empty tree
-            return true;
-        }
-        if (!x->right_ || !x->left_) {
-            // header always has both right and left
-            return false;
-        }
-        if (x->right_ == x->left_) {
-            // header of single node tree
-            return true;
-        }
-        if (x->right_->parent_ != x || x->left_->parent_ != x) {
-            // size > 1, header can't be the parent of both rightmost and leftmost
-            return true;
-        }
-        return false;
-    }
 
     static constexpr avl_node* bst_minimum(avl_node* x)
     {
@@ -281,7 +266,7 @@ private:
 
     static constexpr avl_node* bst_predecessor(avl_node* x)
     {
-        if (bst_is_header(x)) {
+        if (algorithms::bst_is_header(x)) {
             return bst_maximum(x->parent_);
         }
         if (x->left_) {
