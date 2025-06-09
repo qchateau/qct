@@ -86,6 +86,7 @@ private:
 
 template <typename Node, typename Comp = std::less<>>
 class tree {
+private:
     using node = std::remove_pointer_t<decltype(Node::parent_)>;
 
     template <bool Const>
@@ -148,7 +149,7 @@ class tree {
         iterator_impl<false> as_mutable() const
             requires(Const)
         {
-            return iterator_impl<false>{const_cast<Node*>(node_)};
+            return iterator_impl<false>{const_cast<value_type*>(node_)};
         }
 
         node* node_{nullptr};
@@ -163,6 +164,19 @@ public:
     static_assert(std::bidirectional_iterator<iterator>);
     static_assert(std::bidirectional_iterator<const_iterator>);
 
+    tree() = default;
+
+    tree(tree const&) = delete;
+    tree& operator=(tree const&) = delete;
+
+    tree(tree&& other) noexcept { *this = std::move(other); }
+    tree& operator=(tree&& other) noexcept
+    {
+        header_ = other.header_;
+        root()->parent_ = &header_;
+        return *this;
+    }
+
     constexpr iterator begin() { return iterator{leftmost()}; }
     constexpr iterator end() { return iterator{&header_}; }
     constexpr const_iterator begin() const { return as_mutable().begin(); }
@@ -172,37 +186,29 @@ public:
         return root() ? root()->subtree_size_ : 0;
     }
 
-    constexpr void erase(Node const& node)
+    constexpr iterator erase(iterator it)
     {
-        auto info = bst_erase(&node);
+        auto next = bst_successor(it.node_);
+        auto info = bst_erase(it.node_);
         if (info.y) {
-            info.y->balance_ = node.balance_;
-            info.y->subtree_size_ = node.subtree_size_;
+            info.y->balance_ = it.node_->balance_;
+            info.y->subtree_size_ = it.node_->subtree_size_;
         }
         qct_erase_rebalance(info);
+        return iterator{next};
     }
 
-    constexpr void insert(Node& node)
+    constexpr iterator insert(value_type& node)
     {
         qct_insert(node);
         qct_insert_rebalance(&node);
+        return iterator{&node};
     }
 
     template <typename T>
     constexpr iterator lower_bound(T const& val)
     {
-        iterator res = end();
-        Node* current = upcast(root());
-        while (current) {
-            if (Comp{}(*current, val)) {
-                current = upcast(current->right_);
-            }
-            else {
-                res = iterator{current};
-                current = upcast(current->left_);
-            }
-        }
-        return res;
+        return lower_bound(root(), end().node_, val);
     }
 
     template <typename T>
@@ -214,24 +220,39 @@ public:
     template <typename T>
     constexpr iterator upper_bound(T const& val)
     {
-        iterator res = end();
-        Node* current = upcast(root());
-        while (current) {
-            if (Comp{}(val, *current)) {
-                res = iterator{current};
-                current = upcast(current->left_);
-            }
-            else {
-                current = upcast(current->right_);
-            }
-        }
-        return res;
+        return upper_bound(root(), end().node_, val);
     }
 
     template <typename T>
     constexpr const_iterator upper_bound(T const& val) const
     {
         return as_mutable().upper_bound(val);
+    }
+
+    template <typename T>
+    constexpr std::pair<iterator, iterator> equal_range(T const& val)
+    {
+        auto* root = this->root();
+        auto* end = this->end().node_;
+        while (root) {
+            if (Comp{}(*upcast(root), val)) {
+                root = root->right_;
+            }
+            else if (Comp{}(val, *upcast(root))) {
+                end = root;
+                root = root->left_;
+            }
+            else {
+                return {lower_bound(root, end, val), upper_bound(root, end, val)};
+            }
+        }
+        return {end, end};
+    }
+
+    template <typename T>
+    constexpr std::pair<const_iterator, const_iterator> equal_range(T const& val) const
+    {
+        return as_mutable().equal_range(val);
     }
 
     template <typename T>
@@ -254,7 +275,10 @@ private:
         bool n_is_left{};
     };
 
-    static constexpr Node* upcast(node* p) { return static_cast<Node*>(p); }
+    static constexpr value_type* upcast(node* p)
+    {
+        return static_cast<value_type*>(p);
+    }
 
     static constexpr node* bst_minimum(node* x)
     {
@@ -321,38 +345,43 @@ private:
         }
     }
 
-    constexpr void qct_insert(Node& x)
+    constexpr void qct_insert(value_type& x)
     {
-        bool is_leftmost = true;
-        bool is_rightmost = true;
         node* parent = &header_;
-        node** current = &root();
-        while (*current) {
-            parent = *current;
+        node* current = root();
+        while (current) {
+            parent = current;
             parent->subtree_size_++;
-            if (Comp{}(*upcast(*current), x)) {
-                current = &(*current)->right_;
-                is_leftmost = false;
+            if (Comp{}(*upcast(current), x)) {
+                current = current->right_;
             }
             else {
-                current = &(*current)->left_;
-                is_rightmost = false;
+                current = current->left_;
             }
         }
-        *current = &x;
+        if (parent == &header_) {
+            root() = &x;
+            leftmost() = &x;
+            rightmost() = &x;
+        }
+        else if (!Comp{}(*upcast(parent), x)) {
+            parent->left_ = &x;
+            if (parent == leftmost()) {
+                leftmost() = &x;
+            }
+        }
+        else {
+            parent->right_ = &x;
+            if (parent == rightmost()) {
+                rightmost() = &x;
+            }
+        }
 
         x.parent_ = parent;
         x.left_ = nullptr;
         x.right_ = nullptr;
         x.balance_ = 0;
         x.subtree_size_ = 1;
-
-        if (is_leftmost) {
-            leftmost() = &x;
-        }
-        if (is_rightmost) {
-            rightmost() = &x;
-        }
     }
 
     constexpr erase_rebalance_info bst_erase(node const* z)
@@ -659,6 +688,40 @@ private:
         for (node* x = g; x != &header_; x = x->parent_) {
             x->subtree_size_--;
         }
+    }
+
+    template <typename T>
+    static constexpr iterator lower_bound(node* root, node* end, T const& val)
+    {
+        node* res = end;
+        value_type* current = upcast(root);
+        while (current) {
+            if (Comp{}(*current, val)) {
+                current = upcast(current->right_);
+            }
+            else {
+                res = current;
+                current = upcast(current->left_);
+            }
+        }
+        return iterator{res};
+    }
+
+    template <typename T>
+    static constexpr iterator upper_bound(node* root, node* end, T const& val)
+    {
+        node* res = end;
+        value_type* current = upcast(root);
+        while (current) {
+            if (Comp{}(val, *current)) {
+                res = current;
+                current = upcast(current->left_);
+            }
+            else {
+                current = upcast(current->right_);
+            }
+        }
+        return iterator{res};
     }
 
     constexpr node*& root() { return header_.parent_; }

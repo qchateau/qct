@@ -9,35 +9,23 @@ This is achieved by storing a subtree size in each node of the tree. The cost of
 ## Benchmarks
 
 ```
-----------------------------------------------------------------------------
-Benchmark                                  Time             CPU   Iterations
-----------------------------------------------------------------------------
-BM_set_insert                           2154 ns         2159 ns       640180
-BM_qct_insert                           2270 ns         2274 ns       614858
-BM_boost_avl_insert                     2161 ns         2166 ns       641388
-BM_boost_rb_insert                      2140 ns         2145 ns       647636
-BM_set_erase                            2547 ns         2551 ns       550903
-BM_qct_erase                            2330 ns         2334 ns       608184
-BM_boost_avl_erase                      2476 ns         2480 ns       564957
-BM_boost_rb_erase                       2536 ns         2540 ns       563613
-BM_set_find                              516 ns          516 ns      2746551
-BM_qct_find                              489 ns          489 ns      2876312
-BM_boost_avl_find                        475 ns          475 ns      2977042
-BM_boost_rb_find                         499 ns          499 ns      2831999
-BM_set_lower_bound                       523 ns          523 ns      2707051
-BM_qct_lower_bound                       499 ns          499 ns      2827957
-BM_boost_avl_lower_bound                 482 ns          482 ns      2935170
-BM_boost_rb_lower_bound                  497 ns          497 ns      2828859
-BM_set_lower_bound_distance          2550329 ns      2550181 ns          507
-BM_qct_lower_bound_distance              689 ns          689 ns      2019359
-BM_boost_avl_lower_bound_distance    2464692 ns      2464580 ns          537
-BM_boost_rb_lower_bound_distance     2516711 ns      2516545 ns          530
-BM_set_iter                          5464347 ns      5464165 ns          257
-BM_qct_iter                          5338344 ns      5337876 ns          260
-BM_boost_avl_iter                    5283299 ns      5282816 ns          263
-BM_boost_rb_iter                     5407504 ns      5406968 ns          263
-BM_set_reverse_iter                  5615354 ns      5615013 ns          249
-BM_qct_reverse_iter                  5425031 ns      5424700 ns          262
-BM_boost_avl_reverse_iter            5470185 ns      5469865 ns          256
-BM_boost_rb_reverse_iter             5511994 ns      5511844 ns          253
+--------------------------------------------------------------------
+Benchmark                          Time             CPU   Iterations
+--------------------------------------------------------------------
+BM_qct_insert                    306 ns          306 ns      2307198
+BM_boost_avl_insert              288 ns          288 ns      2467998
+BM_qct_erase                     437 ns          437 ns      1606640
+BM_boost_avl_erase               417 ns          417 ns      1674462
+BM_qct_find                      280 ns          280 ns      2488296
+BM_boost_avl_find                281 ns          281 ns      2483126
+BM_qct_lower_bound               222 ns          222 ns      3140008
+BM_boost_avl_lower_bound         233 ns          233 ns      2986163
+BM_qct_equal_range               296 ns          296 ns      2368834
+BM_boost_avl_equal_range         286 ns          286 ns      2413046
+BM_qct_distance                  665 ns          665 ns      1064850
+BM_boost_avl_distance         843851 ns       843795 ns          837
+BM_qct_iter                  2669865 ns      2669821 ns          258
+BM_boost_avl_iter            2761993 ns      2761813 ns          256
+BM_qct_reverse_iter          2778106 ns      2778053 ns          254
+BM_boost_avl_reverse_iter    2763309 ns      2762951 ns          254
 ```

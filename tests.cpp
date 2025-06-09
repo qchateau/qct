@@ -133,7 +133,7 @@ TEMPLATE_TEST_CASE(
         auto x = distrib(gen);
         auto it = tree.lower_bound(x);
         if (it != tree.end()) {
-            tree.erase(*it);
+            tree.erase(it);
             erased++;
             CHECK(tree.size() == n - erased);
         }
@@ -167,8 +167,8 @@ TEMPLATE_TEST_CASE(
         nodes.push_back(Node{x});
         tree.insert(nodes.back());
     }
-    auto const min = *tree.begin();
-    auto const max = *std::prev(tree.end());
+    auto const& min = *tree.begin();
+    auto const& max = *std::prev(tree.end());
 
     CHECK(tree.find(min) == tree.begin());
     CHECK(tree.find(max) == std::prev(tree.end()));
@@ -185,6 +185,9 @@ TEMPLATE_TEST_CASE(
         auto lb = tree.lower_bound(x);
         auto ub = tree.upper_bound(x);
         auto f = tree.find(x);
+        auto eq = tree.equal_range(x);
+        CHECK(eq.first == lb);
+        CHECK(eq.second == ub);
 
         if (lb == tree.end()) {
             CHECK(f == tree.end());

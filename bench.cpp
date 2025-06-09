@@ -1,11 +1,10 @@
+#include <chrono>
 #include <list>
 #include <random>
-#include <set>
 #include <variant>
 
 #include <benchmark/benchmark.h>
 #include <boost/intrusive/avl_set.hpp>
-#include <boost/intrusive/set.hpp>
 
 #include "qct.h"
 
@@ -14,28 +13,11 @@ class comparable_node : public qct::node<> {
 public:
     using value_type = T;
 
-    comparable_node(T x) : x_(x) {}
+    explicit comparable_node(T x) : x_(x) {}
 
-    friend auto operator<=>(comparable_node const& lhs, comparable_node const& rhs)
-    {
-        return lhs.x_ <=> rhs.x_;
-    }
-
-private:
-    T x_;
-};
-
-template <typename T>
-class boost_rb_node : public boost::intrusive::set_base_hook<> {
-public:
-    using value_type = T;
-
-    boost_rb_node(T x) : x_(x) {}
-
-    friend auto operator<=>(boost_rb_node const& lhs, boost_rb_node const& rhs)
-    {
-        return lhs.x_ <=> rhs.x_;
-    }
+    friend auto operator<=>(
+        comparable_node const& lhs,
+        comparable_node const& rhs) = default;
 
 private:
     T x_;
@@ -46,7 +28,7 @@ class boost_avl_node : public boost::intrusive::avl_set_base_hook<> {
 public:
     using value_type = T;
 
-    boost_avl_node(T x) : x_(x) {}
+    explicit boost_avl_node(T x) : x_(x) {}
 
     friend auto operator<=>(boost_avl_node const& lhs, boost_avl_node const& rhs)
     {
@@ -67,202 +49,161 @@ static std::size_t seed()
     return seed;
 }
 
-template <template <typename...> typename TreeT, typename Node, typename Data>
+template <typename Data>
+static auto init_rng()
+{
+    std::mt19937 gen(seed());
+    return [gen = std::mt19937{seed()},
+            distrib = std::uniform_int_distribution<Data>(
+                std::numeric_limits<Data>::min(),
+                std::numeric_limits<Data>::max())]() mutable {
+        return distrib(gen);
+    };
+}
+
+template <template <typename...> typename TreeT, typename Node>
+static auto init_tree()
+{
+    using Tree = TreeT<Node>;
+    auto distrib = init_rng<typename Node::value_type>();
+
+    std::vector<std::unique_ptr<Node>> nodes;
+    Tree tree;
+
+    for (std::size_t i = 0; i < init_size; ++i) {
+        auto x = distrib();
+        nodes.push_back(std::make_unique<Node>(x));
+        tree.insert(*nodes.back());
+    }
+
+    return std::tuple{std::move(tree), std::move(nodes)};
+}
+
+class iteration_timer {
+public:
+    explicit iteration_timer(benchmark::State& state)
+        : state_{state}, start_{std::chrono::steady_clock::now()}
+    {
+    }
+
+    ~iteration_timer()
+    {
+        auto const duration = std::chrono::steady_clock::now() - start_;
+        state_.SetIterationTime(
+            std::chrono::duration_cast<std::chrono::duration<double>>(duration)
+                .count());
+    }
+
+private:
+    benchmark::State& state_;
+    std::chrono::steady_clock::time_point start_;
+};
+
+template <template <typename...> typename TreeT, typename Node>
 static void BM_insert(benchmark::State& state)
 {
-    using Tree = TreeT<Node>;
-    std::mt19937 gen(seed());
-    std::uniform_int_distribution<Data> distrib(
-        std::numeric_limits<Data>::min(), std::numeric_limits<Data>::max());
-
-    // Vector of unique_ptr is important:
-    // Nodes must be allocated on the heap to be comparable with std::set
-    // Nodes must not be embedded in another stl node (as would happen with std::list<Node>)
-    std::vector<std::unique_ptr<Node>> nodes;
-    Tree tree;
-
-    for (std::size_t i = 0; i < init_size; ++i) {
-        auto x = distrib(gen);
-        if constexpr (std::same_as<Data, Node>) {
-            tree.insert(x);
-        }
-        else {
-            nodes.push_back(std::make_unique<Node>(x));
-            tree.insert(*nodes.back());
-        }
-    }
+    auto [tree, nodes] = init_tree<TreeT, Node>();
+    auto distrib = init_rng<typename Node::value_type>();
 
     for (auto _ : state) {
-        auto x = distrib(gen);
-        if constexpr (std::same_as<Data, Node>) {
-            tree.insert(x);
-        }
-        else {
-            nodes.push_back(std::make_unique<Node>(x));
-            tree.insert(*nodes.back());
+        auto x = distrib();
+        auto node = std::make_unique<Node>(x);
+        auto it = tree.end();
+
+        {
+            iteration_timer _(state);
+            it = tree.insert(*node);
+            benchmark::DoNotOptimize(it);
         }
 
-        benchmark::DoNotOptimize(tree.begin());
-
-        state.PauseTiming();
-        tree.erase(*tree.find(x));
-        if constexpr (!std::same_as<Data, Node>) {
-            nodes.pop_back();
-        }
-        state.ResumeTiming();
+        tree.erase(it);
     }
 }
 
-template <template <typename...> typename TreeT, typename Node, typename Data>
+template <template <typename...> typename TreeT, typename Node>
 static void BM_erase(benchmark::State& state)
 {
-    using Tree = TreeT<Node>;
-    std::mt19937 gen(seed());
-    std::uniform_int_distribution<Data> distrib(
-        std::numeric_limits<Data>::min(), std::numeric_limits<Data>::max());
-
-    std::vector<std::unique_ptr<Node>> nodes;
-    Tree tree;
-
-    for (std::size_t i = 0; i < init_size; ++i) {
-        auto x = distrib(gen);
-        if constexpr (std::same_as<Data, Node>) {
-            tree.insert(x);
-        }
-        else {
-            nodes.push_back(std::make_unique<Node>(x));
-            tree.insert(*nodes.back());
-        }
-    }
+    auto [tree, nodes] = init_tree<TreeT, Node>();
+    auto distrib = init_rng<typename Node::value_type>();
 
     for (auto _ : state) {
-        auto x = distrib(gen);
-        auto it = tree.lower_bound(x);
-        if (it != tree.end()) {
-            tree.erase(*it);
+        auto it = tree.end();
+        while (it == tree.end()) {
+            it = tree.lower_bound(Node{distrib()});
         }
 
-        benchmark::DoNotOptimize(tree.begin());
-
-        state.PauseTiming();
-        if (it != tree.end()) {
-            if constexpr (std::same_as<Data, Node>) {
-                tree.insert(x);
-            }
-            else {
-                tree.insert(*it);
-            }
+        {
+            iteration_timer _(state);
+            benchmark::DoNotOptimize(tree.erase(it));
         }
-        state.ResumeTiming();
+
+        tree.insert(*it);
     }
 }
 
-template <template <typename...> typename TreeT, typename Node, typename Data>
+template <template <typename...> typename TreeT, typename Node>
 static void BM_find(benchmark::State& state)
 {
-    using Tree = TreeT<Node>;
-    std::mt19937 gen(seed());
-    std::uniform_int_distribution<Data> distrib(
-        std::numeric_limits<Data>::min(), std::numeric_limits<Data>::max());
-
-    std::vector<std::unique_ptr<Node>> nodes;
-    Tree tree;
-
-    for (std::size_t i = 0; i < init_size; ++i) {
-        auto x = distrib(gen);
-        if constexpr (std::same_as<Data, Node>) {
-            tree.insert(x);
-        }
-        else {
-            nodes.push_back(std::make_unique<Node>(x));
-            tree.insert(*nodes.back());
-        }
-    }
+    auto [tree, nodes] = init_tree<TreeT, Node>();
+    auto distrib = init_rng<typename Node::value_type>();
 
     for (auto _ : state) {
-        auto x = distrib(gen);
+        auto const& x = *nodes[std::abs(distrib()) % nodes.size()];
         benchmark::DoNotOptimize(tree.find(x));
     }
 }
 
-template <template <typename...> typename TreeT, typename Node, typename Data>
+template <template <typename...> typename TreeT, typename Node>
 static void BM_lower_bound(benchmark::State& state)
 {
-    using Tree = TreeT<Node>;
-    std::mt19937 gen(seed());
-    std::uniform_int_distribution<Data> distrib(
-        std::numeric_limits<Data>::min(), std::numeric_limits<Data>::max());
-
-    std::vector<std::unique_ptr<Node>> nodes;
-    Tree tree;
-
-    for (std::size_t i = 0; i < init_size; ++i) {
-        auto x = distrib(gen);
-        if constexpr (std::same_as<Data, Node>) {
-            tree.insert(x);
-        }
-        else {
-            nodes.push_back(std::make_unique<Node>(x));
-            tree.insert(*nodes.back());
-        }
-    }
+    auto [tree, nodes] = init_tree<TreeT, Node>();
+    auto distrib = init_rng<typename Node::value_type>();
 
     for (auto _ : state) {
-        auto x = distrib(gen);
-        benchmark::DoNotOptimize(tree.lower_bound(x));
+        auto x = distrib();
+        benchmark::DoNotOptimize(tree.lower_bound(Node{x}));
     }
 }
 
-template <template <typename...> typename TreeT, typename Node, typename Data>
-static void BM_lower_bound_distance(benchmark::State& state)
+template <template <typename...> typename TreeT, typename Node>
+static void BM_equal_range(benchmark::State& state)
 {
-    using Tree = TreeT<Node>;
-    std::mt19937 gen(seed());
-    std::uniform_int_distribution<Data> distrib(
-        std::numeric_limits<Data>::min(), std::numeric_limits<Data>::max());
-
-    std::vector<std::unique_ptr<Node>> nodes;
-    Tree tree;
-
-    for (std::size_t i = 0; i < init_size; ++i) {
-        auto x = distrib(gen);
-        if constexpr (std::same_as<Data, Node>) {
-            tree.insert(x);
-        }
-        else {
-            nodes.push_back(std::make_unique<Node>(x));
-            tree.insert(*nodes.back());
-        }
-    }
+    auto [tree, nodes] = init_tree<TreeT, Node>();
+    auto distrib = init_rng<typename Node::value_type>();
 
     for (auto _ : state) {
-        auto x = distrib(gen);
-        using std::distance;
-        benchmark::DoNotOptimize(distance(tree.begin(), tree.lower_bound(x)));
+        auto const& x = *nodes[std::abs(distrib()) % nodes.size()];
+        benchmark::DoNotOptimize(tree.equal_range(x));
     }
 }
 
-template <template <typename...> typename TreeT, typename Node, typename Data>
+template <template <typename...> typename TreeT, typename Node>
+static void BM_distance(benchmark::State& state)
+{
+    auto [tree, nodes] = init_tree<TreeT, Node>();
+    auto distrib = init_rng<typename Node::value_type>();
+
+    for (auto _ : state) {
+        auto a = distrib();
+        auto b = distrib();
+        if (b < a) {
+            std::swap(a, b);
+        }
+        auto ita = tree.lower_bound(Node{a});
+        auto itb = tree.lower_bound(Node{b});
+
+        {
+            iteration_timer _(state);
+            using std::distance;
+            benchmark::DoNotOptimize(distance(ita, itb));
+        }
+    }
+}
+
+template <template <typename...> typename TreeT, typename Node>
 static void BM_iter(benchmark::State& state)
 {
-    using Tree = TreeT<Node>;
-    std::mt19937 gen(seed());
-    std::uniform_int_distribution<Data> distrib(
-        std::numeric_limits<Data>::min(), std::numeric_limits<Data>::max());
-
-    std::vector<std::unique_ptr<Node>> nodes;
-    Tree tree;
-
-    for (std::size_t i = 0; i < init_size; ++i) {
-        auto x = distrib(gen);
-        if constexpr (std::same_as<Data, Node>) {
-            tree.insert(x);
-        }
-        else {
-            nodes.push_back(std::make_unique<Node>(x));
-            tree.insert(*nodes.back());
-        }
-    }
+    auto [tree, nodes] = init_tree<TreeT, Node>();
 
     for (auto _ : state) {
         for (auto it = tree.begin(); it != tree.end(); ++it) {
@@ -271,27 +212,10 @@ static void BM_iter(benchmark::State& state)
     }
 }
 
-template <template <typename...> typename TreeT, typename Node, typename Data>
+template <template <typename...> typename TreeT, typename Node>
 static void BM_reverse_iter(benchmark::State& state)
 {
-    using Tree = TreeT<Node>;
-    std::mt19937 gen(seed());
-    std::uniform_int_distribution<Data> distrib(
-        std::numeric_limits<Data>::min(), std::numeric_limits<Data>::max());
-
-    std::vector<std::unique_ptr<Node>> nodes;
-    Tree tree;
-
-    for (std::size_t i = 0; i < init_size; ++i) {
-        auto x = distrib(gen);
-        if constexpr (std::same_as<Data, Node>) {
-            tree.insert(x);
-        }
-        else {
-            nodes.push_back(std::make_unique<Node>(x));
-            tree.insert(*nodes.back());
-        }
-    }
+    auto [tree, nodes] = init_tree<TreeT, Node>();
 
     for (auto _ : state) {
         for (auto it = tree.end(); it != tree.begin(); --it) {
@@ -300,182 +224,101 @@ static void BM_reverse_iter(benchmark::State& state)
     }
 }
 
-static void BM_set_insert(benchmark::State& state)
-{
-    BM_insert<std::multiset, int64_t, int64_t>(state);
-}
-BENCHMARK(BM_set_insert);
-
 static void BM_qct_insert(benchmark::State& state)
 {
-    BM_insert<qct::tree, comparable_node<int64_t>, int64_t>(state);
+    BM_insert<qct::tree, comparable_node<int64_t>>(state);
 }
 BENCHMARK(BM_qct_insert);
 
 static void BM_boost_avl_insert(benchmark::State& state)
 {
-    BM_insert<boost::intrusive::avl_multiset, boost_avl_node<int64_t>, int64_t>(
-        state);
+    BM_insert<boost::intrusive::avl_multiset, boost_avl_node<int64_t>>(state);
 }
 BENCHMARK(BM_boost_avl_insert);
 
-static void BM_boost_rb_insert(benchmark::State& state)
-{
-    BM_insert<boost::intrusive::multiset, boost_rb_node<int64_t>, int64_t>(state);
-}
-BENCHMARK(BM_boost_rb_insert);
-
-static void BM_set_erase(benchmark::State& state)
-{
-    BM_erase<std::multiset, int64_t, int64_t>(state);
-}
-BENCHMARK(BM_set_erase);
-
 static void BM_qct_erase(benchmark::State& state)
 {
-    BM_erase<qct::tree, comparable_node<int64_t>, int64_t>(state);
+    BM_erase<qct::tree, comparable_node<int64_t>>(state);
 }
 BENCHMARK(BM_qct_erase);
 
 static void BM_boost_avl_erase(benchmark::State& state)
 {
-    BM_erase<boost::intrusive::avl_multiset, boost_avl_node<int64_t>, int64_t>(
-        state);
+    BM_erase<boost::intrusive::avl_multiset, boost_avl_node<int64_t>>(state);
 }
 BENCHMARK(BM_boost_avl_erase);
 
-static void BM_boost_rb_erase(benchmark::State& state)
-{
-    BM_erase<boost::intrusive::multiset, boost_rb_node<int64_t>, int64_t>(state);
-}
-BENCHMARK(BM_boost_rb_erase);
-
-static void BM_set_find(benchmark::State& state)
-{
-    BM_find<std::multiset, int64_t, int64_t>(state);
-}
-BENCHMARK(BM_set_find);
-
 static void BM_qct_find(benchmark::State& state)
 {
-    BM_find<qct::tree, comparable_node<int64_t>, int64_t>(state);
+    BM_find<qct::tree, comparable_node<int64_t>>(state);
 }
 BENCHMARK(BM_qct_find);
 
 static void BM_boost_avl_find(benchmark::State& state)
 {
-    BM_find<boost::intrusive::avl_multiset, boost_avl_node<int64_t>, int64_t>(
-        state);
+    BM_find<boost::intrusive::avl_multiset, boost_avl_node<int64_t>>(state);
 }
 BENCHMARK(BM_boost_avl_find);
 
-static void BM_boost_rb_find(benchmark::State& state)
-{
-    BM_find<boost::intrusive::multiset, boost_rb_node<int64_t>, int64_t>(state);
-}
-BENCHMARK(BM_boost_rb_find);
-
-static void BM_set_lower_bound(benchmark::State& state)
-{
-    BM_lower_bound<std::multiset, int64_t, int64_t>(state);
-}
-BENCHMARK(BM_set_lower_bound);
-
 static void BM_qct_lower_bound(benchmark::State& state)
 {
-    BM_lower_bound<qct::tree, comparable_node<int64_t>, int64_t>(state);
+    BM_lower_bound<qct::tree, comparable_node<int64_t>>(state);
 }
 BENCHMARK(BM_qct_lower_bound);
 
 static void BM_boost_avl_lower_bound(benchmark::State& state)
 {
-    BM_lower_bound<boost::intrusive::avl_multiset, boost_avl_node<int64_t>, int64_t>(
-        state);
+    BM_lower_bound<boost::intrusive::avl_multiset, boost_avl_node<int64_t>>(state);
 }
 BENCHMARK(BM_boost_avl_lower_bound);
 
-static void BM_boost_rb_lower_bound(benchmark::State& state)
+static void BM_qct_equal_range(benchmark::State& state)
 {
-    BM_lower_bound<boost::intrusive::multiset, boost_rb_node<int64_t>, int64_t>(
-        state);
+    BM_equal_range<qct::tree, comparable_node<int64_t>>(state);
 }
-BENCHMARK(BM_boost_rb_lower_bound);
+BENCHMARK(BM_qct_equal_range);
 
-static void BM_set_lower_bound_distance(benchmark::State& state)
+static void BM_boost_avl_equal_range(benchmark::State& state)
 {
-    BM_lower_bound_distance<std::multiset, int64_t, int64_t>(state);
+    BM_equal_range<boost::intrusive::avl_multiset, boost_avl_node<int64_t>>(state);
 }
-BENCHMARK(BM_set_lower_bound_distance);
+BENCHMARK(BM_boost_avl_equal_range);
 
-static void BM_qct_lower_bound_distance(benchmark::State& state)
+static void BM_qct_distance(benchmark::State& state)
 {
-    BM_lower_bound_distance<qct::tree, comparable_node<int64_t>, int64_t>(state);
+    BM_distance<qct::tree, comparable_node<int64_t>>(state);
 }
-BENCHMARK(BM_qct_lower_bound_distance);
+BENCHMARK(BM_qct_distance);
 
-static void BM_boost_avl_lower_bound_distance(benchmark::State& state)
+static void BM_boost_avl_distance(benchmark::State& state)
 {
-    BM_lower_bound_distance<boost::intrusive::avl_multiset, boost_avl_node<int64_t>, int64_t>(
-        state);
+    BM_distance<boost::intrusive::avl_multiset, boost_avl_node<int64_t>>(state);
 }
-BENCHMARK(BM_boost_avl_lower_bound_distance);
-
-static void BM_boost_rb_lower_bound_distance(benchmark::State& state)
-{
-    BM_lower_bound_distance<boost::intrusive::multiset, boost_rb_node<int64_t>, int64_t>(
-        state);
-}
-BENCHMARK(BM_boost_rb_lower_bound_distance);
-
-static void BM_set_iter(benchmark::State& state)
-{
-    BM_iter<std::multiset, int64_t, int64_t>(state);
-}
-BENCHMARK(BM_set_iter);
+BENCHMARK(BM_boost_avl_distance);
 
 static void BM_qct_iter(benchmark::State& state)
 {
-    BM_iter<qct::tree, comparable_node<int64_t>, int64_t>(state);
+    BM_iter<qct::tree, comparable_node<int64_t>>(state);
 }
 BENCHMARK(BM_qct_iter);
 
 static void BM_boost_avl_iter(benchmark::State& state)
 {
-    BM_iter<boost::intrusive::avl_multiset, boost_avl_node<int64_t>, int64_t>(
-        state);
+    BM_iter<boost::intrusive::avl_multiset, boost_avl_node<int64_t>>(state);
 }
 BENCHMARK(BM_boost_avl_iter);
 
-static void BM_boost_rb_iter(benchmark::State& state)
-{
-    BM_iter<boost::intrusive::multiset, boost_rb_node<int64_t>, int64_t>(state);
-}
-BENCHMARK(BM_boost_rb_iter);
-
-static void BM_set_reverse_iter(benchmark::State& state)
-{
-    BM_reverse_iter<std::multiset, int64_t, int64_t>(state);
-}
-BENCHMARK(BM_set_reverse_iter);
-
 static void BM_qct_reverse_iter(benchmark::State& state)
 {
-    BM_reverse_iter<qct::tree, comparable_node<int64_t>, int64_t>(state);
+    BM_reverse_iter<qct::tree, comparable_node<int64_t>>(state);
 }
 BENCHMARK(BM_qct_reverse_iter);
 
 static void BM_boost_avl_reverse_iter(benchmark::State& state)
 {
-    BM_reverse_iter<boost::intrusive::avl_multiset, boost_avl_node<int64_t>, int64_t>(
+    BM_reverse_iter<boost::intrusive::avl_multiset, boost_avl_node<int64_t>>(
         state);
 }
 BENCHMARK(BM_boost_avl_reverse_iter);
-
-static void BM_boost_rb_reverse_iter(benchmark::State& state)
-{
-    BM_reverse_iter<boost::intrusive::multiset, boost_rb_node<int64_t>, int64_t>(
-        state);
-}
-BENCHMARK(BM_boost_rb_reverse_iter);
 
 BENCHMARK_MAIN();
